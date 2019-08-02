@@ -5,11 +5,18 @@ import json
 import os
 
 import qiime2 as q2
+import numpy as np
 import qiime2.plugins.diversity.actions as q2_diversity
 import qiime2.plugins.taxa.actions as q2_taxa
 
+from biom import Table
+
 
 def main():
+
+    # TODO: confirm the size of the AMI is fixed to 12 cores, if this
+    # is the case then lets always split over 11 jobs
+    n_jobs = 11
 
     with open('/data/input/AppSession.json', 'U') as fd_json:
         app = json.load(fd_json)
@@ -39,12 +46,28 @@ def main():
     tree = q2.Artifact.load(os.path.join(input_dir, 'rooted-tree.qza'))
     taxonomy = q2.Artifact.load(os.path.join(input_dir, 'taxonomy.qza'))
 
+    # TODO: Add a validation step in the app's form to require at least 3
+    # samples
+    bt = table.view(Table)
+    _, samples = bt.shape
+
+    # if we can't split the UniFrac compute in batches of at least 4 samples
+    # then there's no point in parallelizing the analysis
+    if (samples // n_jobs) < 4:
+        n_jobs = 1
+
+    counts = bt.sum(axis='sample')
+    if np.all(sampling_depth > counts):
+        raise ValueError("The selected rarefaction depth removes all "
+                         "samples from the analysis. Please use a "
+                         "different value.")
+
+
     # TODO: Figure out the number of jobs we need. If this is running in
     # a table with few samples don't even parallelize and maybe warn about the
     # one sample case from the form.
     diversity_res = q2_diversity.core_metrics_phylogenetic(table=table,
             metadata=metadata, sampling_depth=sampling_depth, phylogeny=tree)
-
 
     # save all the results in a new directory
     output = os.path.join(output_dir, 'core-diversity-analyses')
