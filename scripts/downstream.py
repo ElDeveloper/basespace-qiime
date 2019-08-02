@@ -2,15 +2,14 @@
 
 import sys
 import json
-import logging
+import os
 
-from os.path import join
-from os import makedirs
+import qiime2 as q2
+import qiime2.plugins.diversity.actions as q2_diversity
+import qiime2.plugins.taxa.actions as q2_taxa
+
 
 def main():
-
-    spreadsheet_key = None
-    jobs = 11
 
     with open('/data/input/AppSession.json', 'U') as fd_json:
         app = json.load(fd_json)
@@ -20,36 +19,50 @@ def main():
         if item['Name'] == 'Input.Projects':
             project_id = item['Items'][0]['Id']
         if item['Name'] == 'Input.rarefaction-depth':
-            depth = item['Content']
+            sampling_depth = int(item['Content'])
         if item['Name'] == 'Input.metadata-name':
             metadata_name = item['Content']
 
     # from BaseSpace's documentation
+    # TODO: is this the path where the data is going to be found
     input_dir = '/data/input/appresults/'
 
-    base = join('/data/output/appresults/', project_id)
-    output_dir = join(base, 'upstream-results')
+    # TODO: is this the path to save the data to?
+    base = os.path.join('/data/output/appresults/', project_id)
+    output_dir = os.path.join(base, 'upstream-results')
 
-    makedirs(output_dir, exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
     # TODO: include the path to metadata.tsv
-    metadata = join(base, metadata_name)
+    metadata = q2.Metadata.load(os.path.join(base, metadata_name))
+    table = q2.Artifact.load(os.path.join(input_dir, 'feature-table.qza'))
+    tree = q2.Artifact.load(os.path.join(input_dir, 'rooted-tree.qza'))
+    taxonomy = q2.Artifact.load(os.path.join(input_dir, 'taxonomy.qza'))
 
-    # qiime diversity core-metrics-phylogenetic
+    # TODO: Figure out the number of jobs we need. If this is running in
+    # a table with few samples don't even parallelize and maybe warn about the
+    # one sample case from the form.
+    diversity_res = q2_diversity.core_metrics_phylogenetic(table=table,
+            metadata=metadata, sampling_depth=sampling_depth, phylogeny=tree)
 
-    # qiime diversity alpha-rarefaction
 
-    # q2-taxa: interactive taxa barplot
-    # run summarize_taxa
-    #   also requires metdata
+    # save all the results in a new directory
+    output = os.path.join(output_dir, 'core-diversity-analyses')
+    os.makedirs(output, exist_ok=True)
+    for artifact, name in zip(diversity_res, diversity_res._fields):
+        artifact.save(os.path.join(output, name))
 
-    # see https://github.com/biocore/qiime/issues/2034
-    if jobs != '1':
-        cmd += ' -a -O {jobs}'
+    # TODO: Some of these parameters should probably be listed in the
+    # user interface
+    res = q2_diversity.alpha_rarefaction(table,
+                                   min_depth=int(0.10 * sampling_depth),
+                                   max_depth=sampling_depth,
+                                   phylogeny=tree,
+                                   metadata=metadata)
+    res.save('alpha-rarefaction')
 
-    for log_file in glob(join(output_dir, 'log_*')):
-        with open(log_file, 'U') as fd_log:
-            print fd_log.read()
+    res = q2_taxa.barplot(table=table, taxonomy=taxonomy, metadata=metadata)
+    res.save('taxonomic-barplot')
 
     return 0
 
