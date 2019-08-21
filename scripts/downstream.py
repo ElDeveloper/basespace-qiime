@@ -41,7 +41,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
 
     # TODO: include the path to metadata.tsv
-    metadata = q2.Metadata.load(os.path.join(base, metadata_name))
+    metadata = q2.Metadata.load(os.path.join(input_dir, metadata_name))
     table = q2.Artifact.load(os.path.join(input_dir, 'feature-table.qza'))
     tree = q2.Artifact.load(os.path.join(input_dir, 'rooted-tree.qza'))
     taxonomy = q2.Artifact.load(os.path.join(input_dir, 'taxonomy.qza'))
@@ -77,15 +77,16 @@ def main():
 
     # TODO: Some of these parameters should probably be listed in the
     # user interface
-    res = q2_diversity.alpha_rarefaction(table,
-                                   min_depth=int(0.10 * sampling_depth),
-                                   max_depth=sampling_depth,
-                                   phylogeny=tree,
-                                   metadata=metadata)
-    res.save('alpha-rarefaction')
+    min_depth = int(np.ceil(0.10 * sampling_depth))
+    res, = q2_diversity.alpha_rarefaction(table,
+                                          min_depth=min_depth,
+                                          max_depth=sampling_depth,
+                                          phylogeny=tree,
+                                          metadata=metadata)
+    res.save(os.path.join(output, 'alpha-rarefaction'))
 
-    res = q2_taxa.barplot(table=table, taxonomy=taxonomy, metadata=metadata)
-    res.save('taxonomic-barplot')
+    res, = q2_taxa.barplot(table=table, taxonomy=taxonomy, metadata=metadata)
+    res.save(os.path.join(output, 'taxonomic-barplot'))
 
     return 0
 
